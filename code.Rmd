@@ -1,0 +1,1020 @@
+---
+title: "Projet Série Temporelle : Les recherches internet des aliments"
+author: "CHAUVET Hugo - LEUCHI Ilias"
+output:
+  pdf_document:
+    toc : true
+    extra_dependencies : ["float"]
+---
+
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE}
+#truc utile
+
+# \newpage 
+
+# ```{r message=FALSE,echo=FALSE}
+# Affiche que la sortie
+
+
+# ```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Rien afficher
+
+# ```{r message=FALSE,echo=FALSE, fig.cap= "titre", out.width="60%",fig.align="center"}
+# Affiche grahique
+
+#kable( , caption = "")
+# Tableau
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE}
+#Package 
+
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+library(knitr)
+library(plotly)
+library(gridExtra)
+library(performance)
+library(forecast)
+library(tseries)
+```
+
+\newpage
+
+# Introduction 
+
+## Objectif 
+
+Nous voulons comprendre les recherches internet de certains aliments au cours d'une année. L'objectif va être de trouver la meilleure façon de prédire les recherches internet de ces aliments au cours des prochaines années.     
+
+## Présentation des données 
+
+Pour cela, nous avons récupéré sur kaggle un jeu de données comprenant le nombre de recherches internet de 200 aliments pour chaque semaine entre 2004 et 2016. 
+
+```{r message=FALSE,echo=FALSE}
+df.food <- read.table("food_research.csv", sep = ',', header = TRUE)
+df.food <- df.food[,-2]
+
+kable( head(df.food), caption = "Extrait du jeu de donnée")
+```
+
+Voici un extrait de ces données. On retrouve le type d'aliment, la semaine, ainsi que la valeur du nombre de recherche pour cette semaine. Cette valeur correspond exactement aux proportions de recherches portant sur un aliment, ou le 100% correspond au taux de recherche le plus élevé de cet aliment entre 2004 et 2016.
+
+
+```{r message=FALSE,echo=FALSE}
+#Liste de tout nos aliment
+#unique(df.food['id'])
+aliments = levels(factor(df.food$id))
+
+kable(head( matrix(aliments, 67,3) ), caption = "Extrait des aliments de nos données
+") 
+```
+
+Voici un extrait de quelques aliments présents dans nos données. Pour notre analyse, nous avons décidé de conserver deux aliments, il s'agit du chocolat et pizza. Nous commencerons par analyser la série, puis nous estimerons les différents paramètres, et pour finir, nous chercherons la meilleure manière de réaliser des prédictions sur la série. Nous réaliserons ce travail pour nos deux aliments. Commençons d'abord avec le chocolat. 
+
+\newpage
+
+# Analyse des recherches internet du chocolat
+
+Voyons ensemble comment on évolué les recherches internet du chocolat entre 2004 et 2016, puis regardons comment cela évoluera dans les années suivantes. 
+
+## Caractéristique de la série
+
+Nous allons analyser notre série en regardant si elle présente une tendance et une saisonnalité. Pour rappel, il s'agit de données hebdomadaires donc la période est de 52, la fonction d'auto-corrélations n'est donc pas nécessaire. La création de la série, ainsi que l'analyse descriptive se fait à l'aide de fonctions crée au préalable, qui s'adapte à l'aliment entré en paramètre. Ici, on utilise donc ces fonctions pour le chocolat. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Crée notre série temporelle selon l'aliment choisis
+create_ts <- function(food) {
+  
+  df <- df.food[df.food$id == food,]
+  ts.food <- ts(df, frequency = 52, start = c(2004,1), end = c(2016,52))[,3]
+  return(ts.food)
+  
+}
+  
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+chocolat.ts = create_ts("chocolate")
+```
+
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE}
+#Fait l'analyse de la série selon l'aliment choisis
+analyse_ts <- function(food, plot = FALSE, CA = FALSE, decompose = FALSE, acf= FALSE, 
+                      zoom = NULL) {
+  
+  ts.food = create_ts(food)
+  
+ 
+  if (plot == TRUE) {
+    plot.ts(ts.food, 
+            main = paste("Série temporelle : ",food, "entre 2004 et 2016"), cex.main = 1) 
+
+  }
+  
+  if (decompose == TRUE) {
+    plot(decompose(ts.food))
+  }
+  
+  if (acf == TRUE) {
+    acf(ts.food, xlim= c(0,1))
+  }
+
+  if (length(zoom) == 2) {
+    df <- df.food[df.food$id == food,]
+    if (min(zoom[1],zoom[2]) >= 2004 & max(zoom[1],zoom[2]) <= 2016) {
+    zoomD <- ts(df, frequency = 52,
+                start = c(min(zoom[1],zoom[2]),1), 
+                end = c(max(zoom[1],zoom[2]),1))
+    plot.ts(zoomD[,3], ylab = "nb recherches", xlab = "années",
+            main = paste("Zoom entre",min(zoom[1],zoom[2]),"et",max(zoom[1],zoom[2])))
+    }
+  }
+  
+  
+  if (CA == TRUE) {
+    ggseasonplot(ts.food,year.labels= TRUE,year.labels.left=TRUE)+
+    ggtitle('Chronique annuelle de 2004 à 2016')+
+    xlab('semaine')+
+    ylab('Nb de recherches')
+
+  }
+  
+ 
+  
+}
+```
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Décomposition de la série chocolat", out.width="60%",fig.align="center"}
+analyse_ts('chocolate', decompose = TRUE)
+```
+
+Quand on regarde la tendance générale des recherches internet sur le chocolat entre 2004 et 2016, on remarque qu'il y a une légère augmentation qui se dégage. Quand on isole la tendance de la série, on voit qu'il y a eu une tendance négative entre 2007 et 2009, puis la tendance c'est inversé et une augmentation a eu lieu entre 2009 et 2014 et c'est stabilisé jusqu'en 2016. 
+
+\newpage 
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Zoom entre 2012 et 2015", out.width="60%",fig.align="center"}
+analyse_ts('chocolate', zoom = c(2012,2015))
+```
+
+Dans cette série, on remarque également qu'il y a une saisonnalité, en effet, on voit qu'une courbure se répète entre les années. Quand on zoome entre trois-quatre années, on constate qu'entre les fins d'années et début d'années suivantes, il y a une forte augmentation des recherches internet du chocolat. On peut imaginer que celle-ci est due aux différentes fêtes de fin d'année. 
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Chronique annuelle de 2004 à 2016", out.width="60%",fig.align="center"}
+analyse_ts('chocolate', CA = TRUE)
+```
+
+Avec la chronique annuelle, on remarque également des pics entre les 10e et 17e semaines de l'année, là aussi une fête est sûrement à l'origine de cette hausse. Les recherches se stabilisent pour le reste de l'année.
+
+
+\newpage
+
+## Estimation de la tendance, saisonnalité et résidus
+
+On va maintenant chercher à estimer la tendance, la saisonnalité et les résidus, qui serviront à faire des prévisions sur nos données. Ici aussi, nous avons développé plusieurs fonctions pour pouvoir adapter les résultats selon l'aliment souhaité. Nous les appliquons donc au chocolat. 
+
+### Partie saisonnière
+
+On commence avec la partie saisonnière. L'estimation des coefficients saisonniers est obtenue à l'aide de la fonction décompose appliquée à notre série. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Extrait les coefficients saisonniers selon l'aliment
+sais_estime <- function(food) {
+  ts.food = create_ts(food)
+  return(decompose(ts.food)$figure)
+}
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+sais.estime.chocolat = sais_estime("chocolate")
+```
+
+```{r message=FALSE,echo=FALSE}
+kable(round(matrix(sais.estime.chocolat, 13,4) , 2) , 
+      caption = "Coefficients saisonniers de la série du chocolat")
+```
+
+Notre série à une période de 52, nous obtenons donc 52 coefficients saisonniers présents dans le tableau ci-dessus.
+
+
+### Estimation de la tendance
+
+Le prochain objectif va être d'estimer la tendance. Pour cela, on commence par retirer la partie saisonnière de notre série. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Création de la série stationnaire
+serie.csv = function(food) {
+    serie = create_ts(food)
+    csv = serie-decompose(serie)$seasonal #série Corrigé des Variations Saisoniaires
+    return(csv)
+}
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+chocolat.csv = serie.csv("chocolate")
+```
+
+\newpage
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Décomposition de la série corrigée des variations saisonnières", out.width="60%",fig.align="center"} 
+plot( decompose( chocolat.csv ) )
+```
+
+On voit que la série a bien été désaisonnalisé, car la partie saisonnière varie entre de très petites valeurs. La série comporte donc uniquement la tendance ainsi que les résidus. Pour estimer la tendance, on va ajuster plusieurs polynômes avec différents degrés sur cette série désaisonnalisé, afin de trouver à partir de combien de degrés l'estimation de la tendance est la meilleure. Grâce à une fonction, nous testons jusqu'à 50 degrés de polynôme et affichons les R² ajustés au fur et à mesure. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Pour choisir le nombre de degrès de polynome pour l'estimation de la tendance.
+Nb_deg_poly <- function(food,nb_deg,plot = FALSE, texte = TRUE) {
+  
+  serie_csv = serie.csv(food)
+  adj_r_squared <- c()
+  t <- 1:length(serie_csv)
+  ti = t
+  for (i in 1:nb_deg) {
+      lm_csvi <- lm(serie_csv ~ ti)
+      Radj_i = summary(lm_csvi)$adj.r.squared
+      adj_r_squared = c(adj_r_squared,Radj_i) 
+      ti = cbind(ti,t^(i+1))
+    
+  }
+  if (texte == TRUE) {
+    for (i in 1:nb_deg) {
+      cat(paste("R² ajusté du polynôme de degré", i, ":", round(adj_r_squared[i], 4), "\n"))
+    }
+    
+  }
+  
+  if (plot == TRUE) {
+    plot(adj_r_squared, type = "l", x= 1:nb_deg,
+         ylab = "R² Adj", xlab = "degrés du polynome",
+         main = "R² ajusté en fonction du degès du polynome", cex.main = 1)
+  } 
+
+}
+
+```
+
+```{r,echo=FALSE, results='hide',message=FALSE,warning=FALSE} 
+Nb_deg_poly("chocolate",50, plot = FALSE, texte = TRUE)
+```
+
+
+```{r message=FALSE,echo=FALSE, fig.cap= "R² ajusté en fonction du degès du polynome", out.width="60%",fig.align="center"}
+Nb_deg_poly("chocolate",50, plot = TRUE, texte = FALSE)
+abline(v=7,col= "red")
+abline(h= 0.3431 , col= "red")
+```
+
+Au vu des R² ajustés et de la courbe suivante, on va considérer 7 degrés de polynômes pour la série sur le chocolat, car après cette valeur, il n y a pas d'augmentation significative des R² ajustés, il y a même une légère chute. On obtient donc un pourcentage de variance expliqué de 34,31%. Cette valeur reste assez faible la tendance n'aura donc pas une estimation consistante. 
+
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+# Crée le modèle à partir du degrès du polynome choisis.
+tend_estime <- function(food, nb_choix) {
+  serie_csv = serie.csv(food)
+   for (i in 1:nb_choix) {
+        t <- 1:length(serie_csv)
+        ti <- sapply(1:i, function(x) t^x)
+        tend_estime <- lm(serie_csv ~ ti)
+   }
+  return(tend_estime)
+}
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+tend.estime.chocolat = tend_estime("chocolate", 7)
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+summary(tend.estime.chocolat)
+```
+
+Quand on regarde les pvaleurs des paramètres de notre polynôme à 7 degrés, on remarque qu'elles sont toutes très faibles. Nous allons donc conserver tous les paramètres de notre modèle.  
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Coefficient de notre tendance
+tend.estime.chocolat$coefficients
+```
+
+
+\newpage
+
+### Estimation des résidus
+
+Maintenant que la saisonnalité et la tendance sont estimées, il nous reste plus qu'à déterminé un modèle qui estimera les résidus de la série du chocolat. On commence par récupérer la série des résidus en enlevant à la série désaisonnalisé la tendance que nous venons d'estimer. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Création de la série residuelle
+serie.res = function(food, tend_estime) {
+    serie_csv = serie.csv(food)
+    res = serie_csv-tend_estime$fitted.values #série residuelle
+    return(res)
+}
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+chocolat.res = serie.res("chocolate", tend.estime.chocolat)
+```
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Décomposition de la série résiduelle du chocolat", out.width="60%",fig.align="center"}
+plot(decompose(chocolat.res))
+```
+
+Sur la figure ci-dessus, il s'agit bien de la série des résidus. La saisonnalité varie entre de petites valeurs et il n y a pas de tendance visible. La série des résidus semble donc stationnaire. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+Box.test(chocolat.res)$p.value
+```
+Nous allons voir à l'aide d'un Box.test s'il reste de l'information à extraire dans nos résidus. On obtient une pvaleur de 0.428, cette valeur n'est pas suffisamment proche de 1, on peut encore extraire de l'information dans nos résidus. Nous allons donc extraire l'information restante à l'aide d'un processus ARMA.
+
+
+```{r message=FALSE,echo=FALSE, fig.cap= "PACF et ACF sur la série résiduelle du chocolat", out.width="60%",fig.align="center"}
+par(mfrow=c(1,2))
+pacf(chocolat.res, main ="PACF sur le série résiduelle") 
+#pour trouver p (AR)  (Commence le décompte à 1)
+acf(chocolat.res, main ="ACF sur le série résiduelle")  
+#pour trouver q  (MA)  (Commence le décompte à 0)
+
+```
+Nous commençons par choisir la dimension p et q de modèles AR(p) et MA(q) à l'aide d'un PACF et d'un ACF sur la série résiduelle. Au vu des graphiques, on choisit les valeurs p = 4 et q = 4. Nous allons maintenant investiguer différents modèles ARMA tels que p+q = 4.
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+arma22<-arima(chocolat.res,order=c(2,0,2))
+arma31<-arima(chocolat.res,order=c(3,0,1))
+arma13<-arima(chocolat.res,order=c(1,0,3))
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+paste("AIC ARMA(2,2) : ", round(arma22$aic,2) )
+paste("AIC ARMA(3,1) : ", round(arma31$aic,2) )
+paste("AIC ARMA(1,3) : ", round(arma13$aic,2) )
+```
+
+Pour chacun des modèles tel que p+q=4 on obtient les AIC suivants : 
+
+- AIC ARMA(2,2) :  3540.18
+- AIC ARMA(3,1) :  3536.79
+- AIC ARMA(1,3) :  3537.26
+
+Ici, parmi les ARMA ou p+q = 4, on retiendra ARMA(3,1) qui a l'AIC le plus bas. On utilisera donc un modèle ARMA(3,1) pour estimer nos résidus.
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+res.estime.chocolat = arma31
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+Box.test(res.estime.chocolat$res)$p.value
+```
+On refait ensuite un Box.test sur les résidus de notre estimation. Cette fois-ci la pvaleur est de 0.919, ce qui est proche de 1. On peut donc considère qu'il n y a plus d'information à extraire.
+
+
+## Prédiction
+
+Passons à la partie prédiction. Pour cela, nous allons voir plusieurs méthodes de prédiction et les comparer pour savoir laquelle est la meilleure. 
+
+### Prédiction manuelle
+
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Tendance à Horizon 1 : 
+n = 7 #Nb de degrès du polynome
+power_vec = seq(from = 1, to = n, by = 1)
+length_vec = rep(length(chocolat.ts)+1, n)
+chocolat_powers = length_vec ^ power_vec
+t_puissance = c(1,chocolat_powers)
+
+tendance_estime = sum(tend.estime.chocolat$coefficients * t_puissance)
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Saisonalité à Horizon 1 : 
+saisonalite_estime = sais.estime.chocolat[1]
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Résidus à Horizon 1 : 
+residu_estime = forecast(arma31,h=1)$mean[1]
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Prediction :
+x_677 = sum(tendance_estime,saisonalite_estime,residu_estime)
+x_677
+```
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE}
+# IC
+
+
+```
+
+
+Commençons avec les différentes estimations du modèle trouvé. Nous allons réaliser une prévision à horizon 1, c'est-à-dire pour la première semaine de 2017. Après réalisation des calculs, on obtient une valeur de 36.014. Nous allons maintenant réaliser des prévisions pour toute l'année 2017. 
+
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+# Annee : Nombre d'années à prédire, 
+pred_manuelle = function(serie, horizon, plot = FALSE) {
+  vec_pred = c()
+  res = forecast(arma31,h=horizon) #estimation des residus pour chocolat : ARMA(3,1)
+  nb_choix = 7  # Degrès du polynome choisis
+  power_vec = seq(from = 1, to =nb_choix, by = 1)
+  tend.estime = tend_estime("chocolate", nb_choix)  #mettre le bon aliment
+  for (i in 1:horizon) {
+    t = rep(length(serie)+i, nb_choix)
+    t_powers = t^power_vec
+    t_powers = c(1,t_powers)
+    tendance_estime = sum(tend.estime$coefficients *t_powers)
+    
+   #------------------------------------------------------------------------
+    
+    res_estime = res$mean[i]
+    
+   #------------------------------------------------------------------------
+    
+    nb_sais = i%%52
+    sais_estime = sais.estime.chocolat[nb_sais]
+    
+   #------------------------------------------------------------------------
+    
+     pred = sum(tendance_estime,sais_estime,res_estime)
+     vec_pred = c(vec_pred , pred)
+  }
+  
+    
+    
+    if (plot == TRUE) {
+          pred.ts = ts(vec_pred, frequency = 52, 
+                       start = c(2017,1), 
+                       end =c(2016+floor(horizon/52),52))
+          plot.ts(serie, xlim = c(2004, 2016+floor(horizon/52)+1), main = "Prédiction manuelle")
+          lines(pred.ts, col ="blue")
+        }
+
+  
+  vec_pred
+ 
+}
+```
+
+```{r message=FALSE,results='hide',echo=FALSE, fig.cap= "Prédiction manuelle de la série chocolat en 2017", out.width="60%",fig.align="center"}
+pred_manuelle(chocolat.ts,52, plot = TRUE)
+```
+
+Voici le graphique des prévisions manuelle réaliser pour l'année 2017. Ces prévisions semble juste, cependant, on a l'impression qu'elles sous-évaluent légèrement le nombre de recherches internet. Nous allons par la suite comparer avec les autres méthodes de prévision pour en tirer de meilleures conclusions. 
+
+### Lissage exponentiel
+
+Passons au lissage exponentiel. Parmi les différents lissages possibles, nous allons chercher lequel est le meilleur à l'aide d'une fonction qui compare les RMSE. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Aide à chosir le meilleur lissage
+best_lissage <- function(food) {
+  
+  serie <- create_ts(food)
+  
+  tr1<-head(serie, as.integer(length(serie)*0.8) ) #80% dans le train
+  tt1<-tail(serie, as.integer(length(serie)*0.2) ) #20% dans le test
+
+
+  #lissage exponentiel simple-------------------------------LES----------------------------------
+  
+  LES=HoltWinters(tr1,beta=FALSE,gamma=FALSE)
+  ps<-predict(LES, n.ahead =as.integer(length(serie)*0.2))
+  RMSE_LES=sqrt(mean( (ps-tt1)^2))
+  
+  
+  
+  #lissage exponentiel double--------------------------------LED---------------------------------
+ 
+  alp_opt<-(1:199)/200
+  RMSE_LED=rep(0,199)
+  for (k in (1:199)) {
+    LED=HoltWinters(tr1,alpha=alp_opt[k]*(2-alp_opt[k]),
+                    beta=alp_opt[k]/(2-alp_opt[k]),gamma=FALSE)
+    pd<-predict(LED, n.ahead=as.integer(length(serie)*0.2))
+    RMSE_LED[k]=sqrt(mean( (pd-tt1)^2) )
+  }
+  
+  alp = alp_opt[ which((RMSE_LED<=min(RMSE_LED))==TRUE) ]
+  LED=HoltWinters(tr1, alpha=alp*(2-alp) , beta=alp/(2-alp),gamma=FALSE)
+  pd<-predict(LED, n.ahead= as.integer(length(serie)*0.2))
+  RMSE_LED=sqrt(mean((pd-tt1)^2))
+  
+  
+  #lissage de HoltWinters non saisonnier------------------------HWNS------------------------------
+ 
+  HWNS=HoltWinters(tr1,gamma=FALSE)
+  pns<-predict(HWNS, n.ahead=as.integer(length(serie)*0.2))
+  RMSE_HWNS=sqrt(mean((pns-tt1)^2)) 
+  
+  
+  #lissage de HoltWinters  saisonnier additif--------------------HWSA-----------------------------
+ 
+  HWSA=HoltWinters(tr1,seasonal = "additive")
+  psa<-predict(HWSA, n.ahead=as.integer(length(serie)*0.2))
+  RMSE_HWSA=sqrt(mean((psa-tt1)^2))
+  
+  
+  #lissage de HoltWinters  saisonnier multiplicatif----------------HWSM---------------------------
+ 
+  HWSM=HoltWinters(tr1,seasonal = "multiplicative")
+  psm<-predict(HWSM, n.ahead=as.integer(length(serie)*0.2))
+  RMSE_HWSM=sqrt(mean( (psm-tt1)^2 )) 
+  
+  
+  #resultats -----------------------------------------------------------------------------------
+    lissage = c("LES","LED","HWNS","HWSA","HWSM")
+    RMSE = c(round(RMSE_LES, 3),
+             round(RMSE_LED, 3),
+             round(RMSE_HWNS, 3), 
+             round(RMSE_HWSA, 3),
+             round(RMSE_HWSM, 3)
+             )
+    
+    cbind( lissage, RMSE )
+  
+
+}
+```
+
+
+```{r message=FALSE,echo=FALSE}
+kable(best_lissage("chocolate") , caption = "RMSE selon les lissages sur la série chocolat" )
+```
+
+On remarque que le lissage de HoltWinters saisonnier multiplicatif (HWSM) obtient le plus faible RMSE. Nous utiliserons donc ce type de lissage pour faire des prédictions sur nos données chocolat. D'abord à horizon 1.
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+HWSM=HoltWinters(chocolat.ts,seasonal = "multiplicative")
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+pred_HWSM = forecast(HWSM,h=1)
+
+pred_h1 = round( pred_HWSM$mean[1], 3)  
+bi_h1 = round( pred_HWSM$lower[1,2], 3)
+bs_h1 = round( pred_HWSM$upper[1,2], 3)
+
+paste("A horizon 1 : prévision =",pred_h1, "IC_95% = [", bi_h1  ,",", bs_h1 ,"]" )
+```
+
+Pour la première semaine de 2017, on obtient une prévision de 37.764 avec un intervalle de confiance à 95% de [ 35.325 , 40.203 ]. Maintenant, réalisons les prévisions pour l'année 2017. 
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Prévision de HWSM pour de la série chocolat en 2017", out.width="60%",fig.align="center"}
+autoplot(forecast(HWSM,h=52), ylim = c(20,100))
+```
+Avec la figure suivant on remarque que les prévisions avec un HWSM semblent plus cohérentes par rapport aux données. De plus, l'intervalle de confiance à un étendu très peu élevé pour l'ensemble des prévisions de 2017. Nous verrons par la suite s'il s'agit de la meilleure manière de prédire nos données sur la série chocolat. 
+
+
+### Processus automatique
+
+  
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Réalise le auto.arima() et la prédiction, pour un horizon et pour un aliment choisis
+pred_sarima<- function(food, horizon) {
+  serie_ts = create_ts(food)
+  sarima = auto.arima(serie_ts)
+  pred = forecast(sarima,h=horizon)
+
+  return(pred)
+}
+
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Prédiction de l'années 2017
+sarima.chocolat = pred_sarima("chocolate", 52)
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+# Le modele choisi par l'auto plot 
+sarima.chocolat$model
+```
+
+Pour finir, nous allons utiliser la méthode SARIMA à l'aide de la fonction auto.arima sur notre série chocolat. Le modèle choisi par la fonction est : ARIMA(0,1,1)(2,1,0). Faisons les prévisions à horizon 1 et en 2017.
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+pred_h1 = round( sarima.chocolat$mean[1], 3)  
+bi_h1 = round( sarima.chocolat$lower[1,2], 3)
+bs_h1 = round( sarima.chocolat$upper[1,2], 3)
+
+paste("A horizon 1 : prévision =",pred_h1, "IC_95% = [", bi_h1  ,",", bs_h1 ,"]" )
+```
+\newpage
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Prévision avec la méthode SARIMA  de la série chocolat en 2017", out.width="60%",fig.align="center"}
+#Graphique
+autoplot(sarima.chocolat, ylim = c(20,100))
+```
+
+Pour la première semaine de 2017, on obtient grâce à l'auto arima une prévision de 38.433 avec un intervalle de confiance de [ 30.301 , 46.566 ]. Le graphique nous montre que la méthode SARIMA produit des prévisions cohérent, cependant l'intervalle des valeurs est plus étendu que celui des prévisions avec le HWSM. Comparons toutes ces méthodes pour n'en garder qu'une seule. 
+
+### Meilleure prédiction 
+
+On va maintenant voir quelle est la meilleure méthode pour la prédiction de nos données sur le chocolat. Pour cela, on va comparer les RMSE des différentes méthodes. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+best_pred = function(food) {
+  
+  serie <- create_ts(food)
+  tr1=head(serie, as.integer(length(serie)*0.8) ) #80% dans le train
+  tt1=tail(serie, as.integer(length(serie)*0.2) ) #20% dans le test
+  
+#----------------------------------------------------------------------------------------------------  
+  HWSM= HoltWinters(tr1,seasonal = "multiplicative")
+  p_HWSM = predict(HWSM, n.ahead=as.integer(length(serie)*0.2))
+  RMSE_HWSM =sqrt(mean( (p_HWSM-tt1)^2)) 
+
+#----------------------------------------------------------------------------------------------------
+  
+  sarima = auto.arima(tr1)
+  p_sarima = forecast(sarima, h= as.integer(length(serie)*0.2))$mean
+  RMSE_sarima =sqrt(mean( (p_sarima-tt1)^2))
+
+#----------------------------------------------------------------------------------------------------
+  
+  p_manuelle = pred_manuelle(tr1,as.integer(length(serie)*0.2))
+  RMSE_manuelle = sqrt(mean( (p_manuelle-tt1)^2))
+
+  
+#----------------------------------------------------------------------------------------------------
+    méthode = c("HWSM", "SARIMA", "manuelle")
+    RMSE = c(
+             round(RMSE_HWSM, 3),
+             round(RMSE_sarima, 3),
+             round(RMSE_manuelle, 3)
+             )
+    
+   cbind( méthode, RMSE )
+  
+  
+  
+  
+}  
+```
+
+
+```{r message=FALSE,echo=FALSE}
+kable(best_pred("chocolate") , caption = "RMSE selon les méthodes de prévision sur la série chocolat")
+```
+
+On remarque que le lissage de HoltWinters saisonnier multiplicatif (HWSM) nous donne le plus petit RMSE. Avec l'ensemble des résultats que nous avons obtenus, on peut en déduire que le HWSM est la meilleure façon de modéliser notre série sur les recherches internet sur le chocolat. 
+
+
+\newpage
+
+# Analyse des recherches internet de la pizza
+
+On va maintenant s'intéresser aux recherches internet de la pizza entre 2004 et 2016. 
+
+## Caractéristique de la série
+
+On commence par l'analyse de la série pizza. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+pizza.ts = create_ts("pizza")
+```
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Série pizza", out.width="60%",fig.align="center"}
+analyse_ts('pizza', plot = T)
+```
+Quand on observe la série sur la pizza, on remarque une forte tendance positive croissante. Une saisonnalité est moins visible sur ce graphique. Utilisons la décomposition de la série et la chronique annuelle pour une meilleure visualisation de la saisonnalité. 
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Décomposition de série pizza", out.width="60%",fig.align="center"}
+analyse_ts('pizza', decompose = TRUE)
+```
+Avec la décomposition de la série, on voit qu'il y a une saisonnalité, cependant elle semble plutôt légère, regardons la plus en détail avec la chronique annuelle.
+
+
+````{r message=FALSE,echo=FALSE, fig.cap= "Chronique annuelle de la série pizza", out.width="60%",fig.align="center"}
+analyse_ts('pizza',CA = T)
+```
+Ici, on remarque que les courbes entre les différentes années ne sont pas superposé comme avec la série du chocolat, ceci est dû à la forte tendance. Concernant la saisonnalité, on observe très peu de variations saisonnières entre les années. 
+
+## Estimation de la tendance, saisonnalité et résidus
+
+L'analyse de la série étant réalisée, passons à l'estimation des différents paramètres de notre série des recherches internet de la pizza.
+
+### Estimation de la saisonnalité
+
+Commençons avec la saisonnalité. Pour cela, nous récupérons les coefficients saisonniers grâce à la décomposition de la série. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+sais.estime.pizza = sais_estime("pizza")
+```
+
+```{r message=FALSE,echo=FALSE}
+kable(round(matrix(sais.estime.pizza, 13,4) , 2) , 
+      caption = "Coefficients saisonniers de la série de la pizza")
+```
+
+Nous obtenons les coefficients suivants. 
+
+### Estimation de la tendance 
+
+Passons maintenant à l'estimation de la tendance. Pour cela, on commence par retirer les variations saisonnières de notre série pizza. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+pizza.csv = serie.csv("pizza")
+```
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Décomposition de la série corrigée des variations saisonnières", out.width="60%",fig.align="center"} 
+plot( decompose( pizza.csv ) )
+```
+La partie saisonnière varie entre de très faibles valeurs, il s'agit bien de la série corrigée des variations saisonnières. Nous pouvons maintenant estimer le nombre de degrés à prendre en compte pour l'estimation de notre tendance.  
+
+```{r,echo=FALSE, results='hide',message=FALSE,warning=FALSE} 
+Nb_deg_poly("pizza",5, texte = TRUE)
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+tend.estime.pizza = tend_estime("pizza", 1)
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+summary(tend.estime.pizza)
+```
+
+Voici la sortie R que nous obtenons avec la fonction que nous avons développée :
+
+- R² ajusté du polynôme de degré 1 : 0.9407 
+- R² ajusté du polynôme de degré 2 : 0.9444 
+- R² ajusté du polynôme de degré 3 : 0.9448 
+- R² ajusté du polynôme de degré 4 : 0.9457 
+- R² ajusté du polynôme de degré 5 : 0.9472 
+
+Au vu des R² ajusté, nous pouvons considérer 1 degré de polynôme. Notre tendance est donc estimée par une fonction affine. Nous obtenons 94.07% de variance expliqué. Au vu des pvaleurs nous gardons tous les coefficients. 
+
+\newpage 
+
+### Estimation des résidus
+
+La tendance étant estimée, nous pouvons passer à l'estimation des résidus. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+pizza.res = serie.res("pizza", tend.estime.pizza)
+```
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Décomposition de la série résiduelle de la pizza", out.width="60%",fig.align="center"}
+plot(decompose(pizza.res))
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+Box.test(pizza.res)$p.value
+```
+
+Nous commençons par enlever la tendance estimée, à la série corrigée des variations saisonnières. La figure ci-dessus montre que nous obtenons bien la série des résidus. Nous réalisons ensuite un Box.test de notre série des résidus, nous obtenons une pvaleur de 0, il reste donc énormément d'information à extraire. 
+
+```{r message=FALSE,echo=FALSE, fig.cap= "PACF et ACF sur la série résiduelle de la pizza", out.width="60%",fig.align="center"}
+par(mfrow=c(1,2))
+pacf(pizza.res, main ="PACF sur le série résiduelle") 
+#pour trouver p (AR)  (Commence le décompte à 1)
+acf(diff(pizza.res), main ="ACF sur le série résiduelle")  
+#pour trouver q  (MA)  (Commence le décompte à 0)
+
+```
+Cherchons les paramètres p et q pour nos résidus estimés. Grace au PACF nous trouvons une valeur de p=3. Avec l'ACF, nous obtenons une valeur de q=2, de plus nous avons utilisé la différence donc nous aurons d=1. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+
+arma11<-arima(pizza.res,order=c(1,1,1))
+arma12<-arima(pizza.res,order=c(1,1,2))
+
+arma21<-arima(pizza.res,order=c(2,1,1))
+arma22<-arima(pizza.res,order=c(2,1,2))
+
+arma31<-arima(pizza.res,order=c(3,1,1))
+arma32<-arima(pizza.res,order=c(3,1,2))
+
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+paste("AIC ARMA(1,1) : ", round(arma11$aic,2) )
+paste("AIC ARMA(1,2) : ", round(arma12$aic,2) )
+
+paste("AIC ARMA(2,1) : ", round(arma21$aic,2) )
+paste("AIC ARMA(2,2) : ", round(arma22$aic,2) )
+
+paste("AIC ARMA(3,1) : ", round(arma31$aic,2) )
+paste("AIC ARMA(3,2) : ", round(arma32$aic,2) )
+
+```
+
+Nous avons ensuite testé plusieurs modèles ARMA avec une différence, telle que p et q ne dépassent pas leur valeur initiale. Nous choisissons donc un ARMA(3,2) qui a l'AIC le plus bas avec une valeur de 3046.26 .
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+res.estime.pizza = arma32
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+Box.test(res.estime.pizza$res)$p.value
+```
+Nous réalisons un Box.test sur les résidus de cette estimation. Nous obtenons une pvaleur de 0.916, ce qui est suffisant. Il n y a plus d'information à extraire.  
+
+## Prédiction
+
+Tous nos paramètres étant estimés, nous pouvons effectuer les différentes prévisions. Comme pour la série chocolat, nous ferons pour chaque méthode une prédiction à horizon 1 et une prédiction pour l'année 2017. Puis nous comparerons les différentes méthodes. 
+
+
+### Prédiction manuelle
+
+Commençons avec la prédiction qui utilise les différents paramètres que nous venons d'estimer.  
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Tendance à Horizon 1 : 
+n = 1 #Nb de degrès du polynome
+power_vec = seq(from = 1, to = n, by = 1)
+length_vec = rep(length(pizza.ts)+1, n)
+pizza_powers = length_vec ^ power_vec
+t_puissance = c(1,pizza_powers)
+
+tendance_estime = sum(tend.estime.pizza$coefficients * t_puissance)
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Saisonalité à Horizon 1 : 
+saisonalite_estime = sais.estime.pizza[1]
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Résidus à Horizon 1 : 
+residu_estime = forecast(res.estime.pizza,h=1)$mean[1]
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Prediction :
+x_677 = sum(tendance_estime,saisonalite_estime,residu_estime)
+x_677
+```
+Avec la méthode manuelle, nous obtenons une prédiction de 79.469 à horizon 1. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+# Annee : Nombre d'années à prédire, 
+pred_manuelle = function(serie, horizon, plot = FALSE) {
+  vec_pred = c()
+  res = forecast(res.estime.pizza,h=horizon) #mettre le bon aliment
+  nb_choix = 1  # Degrès du polynome choisis
+  power_vec = seq(from = 1, to =nb_choix, by = 1)
+  tend.estime = tend_estime("pizza", nb_choix)  #mettre le bon aliment
+  for (i in 1:horizon) {
+    t = rep(length(serie)+i, nb_choix)
+    t_powers = t^power_vec
+    t_powers = c(1,t_powers)
+    tendance_estime = sum(tend.estime$coefficients *t_powers)
+    
+   #------------------------------------------------------------------------
+    
+    res_estime = res$mean[i]
+    
+   #------------------------------------------------------------------------
+    
+    nb_sais = i%%52
+    sais_estime = sais.estime.chocolat[nb_sais]
+    
+   #------------------------------------------------------------------------
+    
+     pred = sum(tendance_estime,sais_estime,res_estime)
+     vec_pred = c(vec_pred , pred)
+  }
+  
+    
+    
+    if (plot == TRUE) {
+          pred.ts = ts(vec_pred, frequency = 52, 
+                       start = c(2017,1), 
+                       end =c(2016+floor(horizon/52),52))
+          plot.ts(serie, xlim = c(2004, 2016+floor(horizon/52)+1), main = "Prédiction manuelle")
+          lines(pred.ts, col ="blue")
+        }
+
+  
+  vec_pred
+ 
+}
+```
+
+
+```{r message=FALSE,results='hide',echo=FALSE, fig.cap= "Prédiction manuelle de la série pizza en 2017", out.width="60%",fig.align="center"}
+pred_manuelle(pizza.ts,52, plot = TRUE)
+```
+Pour l'année 2017, les prévisions ne semblent pas aberrantes, la tendance semble être correctement représentée. Par la suite, nous calculerons le RMSE pour connaître la qualité des estimations. 
+
+### Lissage exponentiel
+
+Passons maintenant aux méthodes plus automatiques, avec d'abord une comparaison des lissages exponentiels. 
+
+```{r message=FALSE,echo=FALSE, warning=FALSE}
+kable(best_lissage("pizza") , caption = "RMSE selon les lissages sur la série pizza" )
+```
+
+Au vu des RMSE des différents lissages, le HoltWinters saisonnier additif (HWSA) à la valeur la plus faible, c'est donc celui-ci que nous conservons. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+HWSA=HoltWinters(pizza.ts,seasonal = "additive")
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+pred_HWSA = forecast(HWSA,h=1)
+
+pred_h1 = round( pred_HWSA$mean[1], 3)  
+bi_h1 = round( pred_HWSA$lower[1,2], 3)
+bs_h1 = round( pred_HWSA$upper[1,2], 3)
+
+paste("A horizon 1 : prévision =",pred_h1, "IC_95% = [", bi_h1  ,",", bs_h1 ,"]" )
+```
+Pour la prévision de la première semaine de 2017, nous obtenons une prévision de 71.732 avec un intervalle de confiance de [ 66.808 , 76.655 ].
+
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Prévision avec HWSA pour de la série pizza en 2017", out.width="60%",fig.align="center"}
+autoplot(forecast(HWSA,h=52), ylim = c(20,100))
+```
+Concernant la prédiction pour l'année 2017 avec un HWSA, la tendance est différente qu'avec notre prédiction manuelle, elle semble moins linéaire. Nous vérifierions quelle méthode correspond le plus à la réalité dans la dernière partie. 
+
+### Prédiction automatique 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+#Prédiction de l'années 2017
+sarima.pizza = pred_sarima("pizza", 52)
+```
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+# Le modele choisi par l'auto plot 
+sarima.pizza$model
+```
+
+Pour finir, regardons les prévisions à l'aide de la fonction auto.plot. Le modèle SARIMA obtenu à l'aide la fonction est le suivant : ARIMA(2,0,1)(0,1,1). 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+pred_h1 = round( sarima.pizza$mean[1], 3)  
+bi_h1 = round( sarima.pizza$lower[1,2], 3)
+bs_h1 = round( sarima.pizza$upper[1,2], 3)
+
+paste("A horizon 1 : prévision =",pred_h1, "IC_95% = [", bi_h1  ,",", bs_h1 ,"]" )
+```
+À horizon 1, nous obtenons une prévision de 74.248, avec l'intervalle de confiance [ 69.556 , 78.941 ]. Cet intervalle est moins étendu que celui avec la méthode HWSA, et englobe de plus grande valeur. 
+
+```{r message=FALSE,echo=FALSE, fig.cap= "Prévision avec la méthode SARIMA de la série pizza en 2017", out.width="60%",fig.align="center"}
+#Graphique
+autoplot(sarima.pizza,  ylim = c(20,100))
+```
+La prévision sur l'année 2017 est très similaire à celle réaliser avec le lissage HWSA, les valeurs sont légèrement plus grande. 
+
+### Meilleure prédiction 
+
+On va maintenant voir quelle est la meilleure méthode pour la prédiction de nos données de la pizza. Pour cela, on va comparer les RMSE des différentes méthodes. 
+
+```{r,echo=FALSE, results='hide', message=FALSE,warning=FALSE} 
+best_pred = function(food) {
+  
+  serie <- create_ts(food)
+  tr1=head(serie, as.integer(length(serie)*0.8) ) #80% dans le train
+  tt1=tail(serie, as.integer(length(serie)*0.2) ) #20% dans le test
+  
+#----------------------------------------------------------------------------------------------------  
+  HWSA= HoltWinters(tr1,seasonal = "additive")
+  p_HWSA = predict(HWSA, n.ahead=as.integer(length(serie)*0.2))
+  RMSE_HWSA =sqrt(mean( (p_HWSA-tt1)^2)) 
+
+#----------------------------------------------------------------------------------------------------
+  
+  sarima = auto.arima(tr1)
+  p_sarima = forecast(sarima, h= as.integer(length(serie)*0.2))$mean
+  RMSE_sarima =sqrt(mean( (p_sarima-tt1)^2))
+
+#----------------------------------------------------------------------------------------------------
+  
+  p_manuelle = pred_manuelle(tr1,as.integer(length(serie)*0.2))
+  RMSE_manuelle = sqrt(mean( (p_manuelle-tt1)^2))
+
+  
+#----------------------------------------------------------------------------------------------------
+    méthode = c("HWSA", "SARIMA", "manuelle")
+    RMSE = c(
+             round(RMSE_HWSA, 3),
+             round(RMSE_sarima, 3),
+             round(RMSE_manuelle, 3)
+             )
+    
+   cbind( méthode, RMSE )
+  
+  
+  
+  
+}  
+```
+
+
+```{r message=FALSE,echo=FALSE}
+kable(best_pred("pizza") , caption = "RMSE selon les méthodes de prévision sur la série pizza")
+```
+
+La méthode manuelle est clairement la plus mauvaise pour prédire nos données, nous obtenons un RMSE de 12.348. Le HWSA est la meilleure méthode pour la prédiction de nos recherches internet sur la pizza, avec un RMSE 5.907. Alors qu'avec le modèle SARIMA, nous obtenons une valeur de 8.718. Nous choisissons donc un lissage HWSA pour la prédiction sur notre série pizza. 
+
+# Conclusion 
+
+Nous avons bien réussi à obtenir des estimations consistantes avec les deux séries que nous avons étudiées. Nous retenons que pour avoir les meilleures estimations sur les séries des recherches internet des aliments, les méthodes de lissage exponentiel semblent retourner les meilleurs résultats. Ceci s'est vu sur nos deux séries étudiées, il faudrait réaliser des analyses avec plus d'aliments pour le confirmer. Le code développé à l'aide de différentes fonctions permet de s'adapter à un aliment particulier, afin de pousser plus loin l'analyse et d'obtenir des conclusions plus solides. 
+
